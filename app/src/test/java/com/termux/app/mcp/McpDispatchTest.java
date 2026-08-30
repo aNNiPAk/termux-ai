@@ -57,13 +57,14 @@ public class McpDispatchTest {
         McpDispatch d = dispatcher(new String[1]);
         d.handle("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"auth\":\"secret\"}}");
         JSONObject r = parse(d.handle("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}"));
-        assertEquals(11, r.getJSONObject("result").getJSONArray("tools").length());
+        assertEquals(12, r.getJSONObject("result").getJSONArray("tools").length());
         String tools = r.getJSONObject("result").getJSONArray("tools").toString();
         assertTrue(tools.contains("\"name\":\"back\""));
         assertTrue(tools.contains("\"name\":\"scroll\""));
         assertTrue(tools.contains("\"name\":\"ime_action\""));
         assertTrue(tools.contains("\"name\":\"query_ui\""));
         assertTrue(tools.contains("\"name\":\"wait_for_change\""));
+        assertTrue(tools.contains("\"name\":\"open_uri\""));
         assertTrue(tools.contains("\"maximum\":30000"));
         assertTrue(tools.contains("\"text_contains\""));
         assertTrue(tools.contains("\"maximum\":100"));

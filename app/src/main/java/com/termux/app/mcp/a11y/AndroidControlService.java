@@ -340,6 +340,28 @@ public final class AndroidControlService extends AccessibilityService {
         }
     }
 
+    public synchronized String openUriJson(String uriValue, String packageName) {
+        if (uriValue == null || uriValue.isEmpty()) return errJson("INVALID_URI");
+        try {
+            android.net.Uri uri = android.net.Uri.parse(uriValue);
+            String scheme = uri.getScheme();
+            if (scheme == null || !("http".equalsIgnoreCase(scheme)
+                || "https".equalsIgnoreCase(scheme))) {
+                return errJson("URI_SCHEME_NOT_ALLOWED");
+            }
+            android.content.Intent intent = new android.content.Intent(
+                android.content.Intent.ACTION_VIEW, uri);
+            if (packageName != null && !packageName.isEmpty()) intent.setPackage(packageName);
+            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(intent);
+            return okJson();
+        } catch (android.content.ActivityNotFoundException e) {
+            return errJson("URI_HANDLER_NOT_FOUND");
+        } catch (Exception e) {
+            return errJson("OPEN_URI_FAILED");
+        }
+    }
+
     public synchronized String launchAppJson(String pkg) {
         if (pkg == null || pkg.isEmpty()) return errJson("PACKAGE_NOT_FOUND");
         try {

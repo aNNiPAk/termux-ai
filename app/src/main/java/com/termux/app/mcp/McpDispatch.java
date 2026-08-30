@@ -103,6 +103,9 @@ public final class McpDispatch {
             tools.put(tool("wait_for_change",
                 "Wait for a newer accessibility UI revision without returning a snapshot.",
                 schemaWaitForChangeArgs()));
+            tools.put(tool("open_uri",
+                "Open an HTTP or HTTPS URI with ACTION_VIEW, optionally in one package.",
+                schemaOpenUriArgs()));
             tools.put(tool("tap",
                 "Tap the element identified by node_ref from the latest ui_snapshot.",
                 schemaOneString("node_ref")));
@@ -205,6 +208,15 @@ public final class McpDispatch {
                 .put("minimum", 1).put("maximum", 30000).put("default", 5000));
         return new JSONObject().put("type", "object").put("properties", props)
             .put("required", new JSONArray().put("since"))
+            .put("additionalProperties", false);
+    }
+
+    private static JSONObject schemaOpenUriArgs() throws Exception {
+        JSONObject props = new JSONObject()
+            .put("uri", new JSONObject().put("type", "string"))
+            .put("package", new JSONObject().put("type", "string"));
+        return new JSONObject().put("type", "object").put("properties", props)
+            .put("required", new JSONArray().put("uri"))
             .put("additionalProperties", false);
     }
 

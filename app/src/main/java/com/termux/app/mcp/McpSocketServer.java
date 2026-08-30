@@ -181,6 +181,14 @@ public final class McpSocketServer {
                 else out = svc.imeActionJson(args.optString("ref", ""));
                 break;
             }
+            case "open_uri": {
+                AndroidControlService svc = AndroidControlService.INSTANCE;
+                if (svc == null) out = errJson("SERVICE_OFF");
+                else if (!actEnabled()) out = errJson("POLICY_DENIED");
+                else out = svc.openUriJson(args.optString("uri", ""),
+                    args.optString("package", ""));
+                break;
+            }
             case "launch_app": {
                 AndroidControlService svc = AndroidControlService.INSTANCE;
                 if (svc == null) out = errJson("SERVICE_OFF");
