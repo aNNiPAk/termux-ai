@@ -274,7 +274,7 @@ public class LocalClientSocket implements Closeable {
             return null;
         }
 
-        JniResult result = LocalSocketManager.available(mLocalSocketRunConfig.getLogTitle() + " (client)", mLocalSocketRunConfig.getFD());
+        JniResult result = LocalSocketManager.available(mLocalSocketRunConfig.getLogTitle() + " (client)", mFD);
         if (result == null || result.retval != 0) {
             return LocalSocketErrno.ERRNO_CHECK_AVAILABLE_DATA_ON_CLIENT_SOCKET_FAILED.getError(
                 mLocalSocketRunConfig.getTitle(), JniResult.getErrorString(result));
@@ -422,7 +422,7 @@ public class LocalClientSocket implements Closeable {
                 return -1;
             }
 
-            return mBytes[0];
+            return mBytes[0] & 0xff;
         }
 
         @Override
@@ -442,6 +442,29 @@ public class LocalClientSocket implements Closeable {
             }
 
             return bytesRead.value;
+        }
+
+        @Override
+        public int read(byte[] bytes, int offset, int length) throws IOException {
+            if (bytes == null) {
+                throw new NullPointerException("Read buffer can't be null");
+            }
+            if (offset < 0 || length < 0 || length > bytes.length - offset) {
+                throw new IndexOutOfBoundsException();
+            }
+            if (length == 0) {
+                return 0;
+            }
+            if (offset == 0 && length == bytes.length) {
+                return read(bytes);
+            }
+
+            byte[] chunk = new byte[length];
+            int bytesRead = read(chunk);
+            if (bytesRead > 0) {
+                System.arraycopy(chunk, 0, bytes, offset, bytesRead);
+            }
+            return bytesRead;
         }
 
         @Override
