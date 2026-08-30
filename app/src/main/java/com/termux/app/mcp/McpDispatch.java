@@ -100,6 +100,9 @@ public final class McpDispatch {
             tools.put(tool("query_ui",
                 "Return only accessibility nodes matching the supplied filters.",
                 schemaQueryUiArgs()));
+            tools.put(tool("wait_for_change",
+                "Wait for a newer accessibility UI revision without returning a snapshot.",
+                schemaWaitForChangeArgs()));
             tools.put(tool("tap",
                 "Tap the element identified by node_ref from the latest ui_snapshot.",
                 schemaOneString("node_ref")));
@@ -192,6 +195,16 @@ public final class McpDispatch {
         return new JSONObject()
             .put("type", "object")
             .put("properties", props)
+            .put("additionalProperties", false);
+    }
+
+    private static JSONObject schemaWaitForChangeArgs() throws Exception {
+        JSONObject props = new JSONObject()
+            .put("since", new JSONObject().put("type", "integer"))
+            .put("timeout_ms", new JSONObject().put("type", "integer")
+                .put("minimum", 1).put("maximum", 30000).put("default", 5000));
+        return new JSONObject().put("type", "object").put("properties", props)
+            .put("required", new JSONArray().put("since"))
             .put("additionalProperties", false);
     }
 

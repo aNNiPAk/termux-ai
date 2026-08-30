@@ -138,6 +138,13 @@ public final class McpSocketServer {
                 out = (svc == null) ? errJson("SERVICE_OFF") : svc.queryUiJson(args);
                 break;
             }
+            case "wait_for_change": {
+                AndroidControlService svc = AndroidControlService.INSTANCE;
+                out = (svc == null) ? errJson("SERVICE_OFF")
+                    : svc.waitForChangeJson(args.optLong("since", -1L),
+                        args.optInt("timeout_ms", 5000));
+                break;
+            }
             case "tap": {
                 AndroidControlService svc = AndroidControlService.INSTANCE;
                 if (svc == null) out = errJson("SERVICE_OFF");

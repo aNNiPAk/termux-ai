@@ -6,6 +6,7 @@ import android.graphics.Path;
 import android.graphics.Rect;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 
@@ -19,6 +20,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Queue;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * The {@code android-control} AccessibilityService: reads the active-window
@@ -39,6 +41,9 @@ public final class AndroidControlService extends AccessibilityService {
     private final Map<String, AccessibilityNodeInfo> refMap = new HashMap<>();
     private int snapshotSeq = 0;
     private long snapshotExpiresAt = 0L;
+    private final AtomicLong uiRevision = new AtomicLong(0L);
+    private final Object revisionLock = new Object();
+    private volatile int lastUiEventType = 0;
 
     @Override
     protected void onServiceConnected() {
@@ -59,7 +64,18 @@ public final class AndroidControlService extends AccessibilityService {
     }
 
     @Override
-    public void onAccessibilityEvent(AccessibilityEvent event) { /* PoC: snapshot is pull-based */ }
+    public void onAccessibilityEvent(AccessibilityEvent event) {
+        if (event == null) return;
+        int type = event.getEventType();
+        if (type != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+            && type != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+            && type != AccessibilityEvent.TYPE_VIEW_SCROLLED) return;
+        lastUiEventType = type;
+        uiRevision.incrementAndGet();
+        synchronized (revisionLock) {
+            revisionLock.notifyAll();
+        }
+    }
 
     @Override
     public void onInterrupt() { }
@@ -110,7 +126,7 @@ public final class AndroidControlService extends AccessibilityService {
                 if (child != null) q.add(child);
             }
         }
-        return new UiSnapshot(snapshotId, SNAPSHOT_TTL_MS, nodes).toJson();
+        return new UiSnapshot(snapshotId, SNAPSHOT_TTL_MS, uiRevision.get(), nodes).toJson();
     }
 
     public synchronized String queryUiJson(JSONObject filters) {
@@ -150,7 +166,36 @@ public final class AndroidControlService extends AccessibilityService {
         JSONObject result = new JSONObject();
         try {
             result.put("ttl_ms", SNAPSHOT_TTL_MS);
+            result.put("revision", uiRevision.get());
             result.put("nodes", matches);
+        } catch (Exception ignored) {}
+        return result.toString();
+    }
+
+    public String waitForChangeJson(long since, int timeoutMs) {
+        if (since < 0L) return errJson("INVALID_REVISION");
+        int timeout = Math.max(1, Math.min(30000, timeoutMs));
+        long deadline = SystemClock.elapsedRealtime() + timeout;
+        synchronized (revisionLock) {
+            while (uiRevision.get() <= since) {
+                long remaining = deadline - SystemClock.elapsedRealtime();
+                if (remaining <= 0L) break;
+                try {
+                    revisionLock.wait(remaining);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return errJson("WAIT_INTERRUPTED");
+                }
+            }
+        }
+        long current = uiRevision.get();
+        JSONObject result = new JSONObject();
+        try {
+            result.put("ok", true);
+            result.put("changed", current > since);
+            result.put("timeout", current <= since);
+            result.put("revision", current);
+            if (current > since) result.put("event_type", eventTypeName(lastUiEventType));
         } catch (Exception ignored) {}
         return result.toString();
     }
@@ -415,6 +460,13 @@ public final class AndroidControlService extends AccessibilityService {
     private static void addAction(List<String> out, AccessibilityNodeInfo node,
                                   int actionId, String name) {
         if (supportsAction(node, actionId)) out.add(name);
+    }
+
+    private static String eventTypeName(int type) {
+        if (type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return "window_state_changed";
+        if (type == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) return "window_content_changed";
+        if (type == AccessibilityEvent.TYPE_VIEW_SCROLLED) return "view_scrolled";
+        return "unknown";
     }
 
     private static boolean matchesFilters(AccessibilityNodeInfo node, JSONObject filters) {

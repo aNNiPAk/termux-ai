@@ -73,11 +73,13 @@ public final class UiSnapshot {
 
     public final String snapshotId;
     public final long ttlMs;
+    public final long revision;
     public final List<UiNode> nodes;
 
-    public UiSnapshot(String snapshotId, long ttlMs, List<UiNode> nodes) {
+    public UiSnapshot(String snapshotId, long ttlMs, long revision, List<UiNode> nodes) {
         this.snapshotId = snapshotId;
         this.ttlMs = ttlMs;
+        this.revision = revision;
         this.nodes = nodes == null ? new ArrayList<UiNode>() : nodes;
     }
 
@@ -90,6 +92,7 @@ public final class UiSnapshot {
         try {
             o.put("snapshot_id", snapshotId);
             o.put("ttl_ms", ttlMs);
+            o.put("revision", revision);
             JSONArray arr = new JSONArray();
             for (UiNode n : nodes) arr.put(n.toJson());
             o.put("nodes", arr);
