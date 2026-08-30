@@ -64,8 +64,12 @@ public final class McpSocketServer {
         token = newToken();
         writeOwnerOnly(new File(TOKEN_FILE_PATH), token);
 
-        socketServer = new LocalSocketManager(context,
-            new LocalSocketRunConfig(TITLE, SOCKET_FILE_PATH, new Client()));
+        LocalSocketRunConfig runConfig =
+            new LocalSocketRunConfig(TITLE, SOCKET_FILE_PATH, new Client());
+        // MCP stdio connections are long-lived and may be idle between tool calls.
+        runConfig.setReceiveTimeout(0);
+        runConfig.setSendTimeout(0);
+        socketServer = new LocalSocketManager(context, runConfig);
         Error error = socketServer.start();
         if (error != null) {
             Logger.logErrorExtended(LOG_TAG, error.getErrorLogString());
@@ -141,6 +145,28 @@ public final class McpSocketServer {
                 if (svc == null) out = errJson("SERVICE_OFF");
                 else if (!actEnabled()) out = errJson("POLICY_DENIED");
                 else out = svc.typeJson(args.optString("node_ref", ""), args.optString("text", ""));
+                break;
+            }
+            case "scroll": {
+                AndroidControlService svc = AndroidControlService.INSTANCE;
+                if (svc == null) out = errJson("SERVICE_OFF");
+                else if (!actEnabled()) out = errJson("POLICY_DENIED");
+                else out = svc.scrollJson(args.optString("ref", ""),
+                    args.optString("direction", ""));
+                break;
+            }
+            case "back": {
+                AndroidControlService svc = AndroidControlService.INSTANCE;
+                if (svc == null) out = errJson("SERVICE_OFF");
+                else if (!actEnabled()) out = errJson("POLICY_DENIED");
+                else out = svc.backJson();
+                break;
+            }
+            case "ime_action": {
+                AndroidControlService svc = AndroidControlService.INSTANCE;
+                if (svc == null) out = errJson("SERVICE_OFF");
+                else if (!actEnabled()) out = errJson("POLICY_DENIED");
+                else out = svc.imeActionJson(args.optString("ref", ""));
                 break;
             }
             case "launch_app": {

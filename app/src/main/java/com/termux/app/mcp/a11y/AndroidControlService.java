@@ -98,7 +98,8 @@ public final class AndroidControlService extends AccessibilityService {
                     n.getViewIdResourceName(),
                     str(n.getContentDescription()),
                     "[" + b.left + "," + b.top + "][" + b.right + "," + b.bottom + "]",
-                    n.isClickable(), n.isEditable(), n.isScrollable()));
+                    n.isClickable(), n.isEditable(), n.isScrollable(), n.isFocused(),
+                    compactActions(n)));
                 refMap.put(ref, n);
                 i++;
             }
@@ -141,6 +142,93 @@ public final class AndroidControlService extends AccessibilityService {
         return ok ? okJson() : errJson("ACTION_UNSUPPORTED");
     }
 
+    public synchronized String backJson() {
+        return performGlobalAction(GLOBAL_ACTION_BACK)
+            ? okJson() : errJson("BACK_ACTION_FAILED");
+    }
+
+    public synchronized String scrollJson(String ref, String direction) {
+        final int action;
+        if ("forward".equals(direction)) {
+            action = AccessibilityNodeInfo.ACTION_SCROLL_FORWARD;
+        } else if ("backward".equals(direction)) {
+            action = AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD;
+        } else {
+            return errJson("INVALID_DIRECTION");
+        }
+
+        if (ref != null && !ref.isEmpty()) {
+            AccessibilityNodeInfo node = resolve(ref);
+            if (node == null) return refError(ref);
+            ActionAttempt attempt = performOnNodeOrAncestor(node, action);
+            if (attempt.performed) return okJson();
+            return errJson(attempt.supported ? "SCROLL_ACTION_FAILED" : "SCROLL_NOT_SUPPORTED");
+        }
+
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        if (root == null) return errJson("NO_ACTIVE_WINDOW");
+        boolean supported = false;
+        try {
+            AccessibilityNodeInfo focused = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
+            if (focused != null) {
+                try {
+                    ActionAttempt attempt = performOnNodeOrAncestor(focused, action);
+                    if (attempt.performed) return okJson();
+                    supported = attempt.supported;
+                } finally {
+                    try { focused.recycle(); } catch (Exception ignored) {}
+                }
+            }
+
+            ActionAttempt attempt = performOnBestScrollable(root, action);
+            if (attempt.performed) return okJson();
+            supported |= attempt.supported;
+        } finally {
+            try { root.recycle(); } catch (Exception ignored) {}
+        }
+        return errJson(supported ? "SCROLL_ACTION_FAILED" : "SCROLL_NOT_SUPPORTED");
+    }
+
+    public synchronized String imeActionJson(String ref) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            return errJson("IME_ACTION_NOT_SUPPORTED");
+        }
+
+        AccessibilityNodeInfo node = null;
+        boolean recycle = false;
+        if (ref != null && !ref.isEmpty()) {
+            node = resolve(ref);
+            if (node == null) return refError(ref);
+        } else {
+            AccessibilityNodeInfo root = getRootInActiveWindow();
+            if (root == null) return errJson("NO_ACTIVE_WINDOW");
+            try {
+                node = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
+                recycle = node != null;
+            } finally {
+                try { root.recycle(); } catch (Exception ignored) {}
+            }
+            if (node == null) return errJson("INPUT_FOCUS_NOT_FOUND");
+        }
+
+        try {
+            int actionId = AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.getId();
+            if (!node.isEditable() && !node.isFocusable() && !supportsAction(node, actionId)) {
+                return errJson("IME_ACTION_NOT_SUPPORTED");
+            }
+            if (!node.isFocused() && !node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)) {
+                return errJson("INPUT_FOCUS_FAILED");
+            }
+            if (!supportsAction(node, actionId)) return errJson("IME_ACTION_NOT_SUPPORTED");
+            return node.performAction(actionId)
+                ? okJson() : errJson("IME_ACTION_FAILED");
+        } finally {
+            if (recycle) {
+                try { node.recycle(); } catch (Exception ignored) {}
+            }
+        }
+    }
+
     public synchronized String launchAppJson(String pkg) {
         if (pkg == null || pkg.isEmpty()) return errJson("PACKAGE_NOT_FOUND");
         try {
@@ -166,6 +254,102 @@ public final class AndroidControlService extends AccessibilityService {
     }
 
     // ---- helpers ----
+
+    private static final class ActionAttempt {
+        final boolean supported;
+        final boolean performed;
+
+        ActionAttempt(boolean supported, boolean performed) {
+            this.supported = supported;
+            this.performed = performed;
+        }
+    }
+
+    private static ActionAttempt performOnNodeOrAncestor(AccessibilityNodeInfo node, int action) {
+        AccessibilityNodeInfo current = node;
+        boolean recycleCurrent = false;
+        boolean supported = false;
+        while (current != null) {
+            AccessibilityNodeInfo parent = null;
+            try {
+                if (supportsAction(current, action)) {
+                    supported = true;
+                    if (current.performAction(action)) return new ActionAttempt(true, true);
+                }
+                parent = current.getParent();
+            } finally {
+                if (recycleCurrent) {
+                    try { current.recycle(); } catch (Exception ignored) {}
+                }
+            }
+            current = parent;
+            recycleCurrent = true;
+        }
+        return new ActionAttempt(supported, false);
+    }
+
+    private static ActionAttempt performOnBestScrollable(AccessibilityNodeInfo root, int action) {
+        Queue<AccessibilityNodeInfo> queue = new ArrayDeque<>();
+        queue.add(AccessibilityNodeInfo.obtain(root));
+        AccessibilityNodeInfo best = null;
+        long bestScore = -1L;
+        boolean supported = false;
+        while (!queue.isEmpty()) {
+            AccessibilityNodeInfo node = queue.poll();
+            if (node == null) continue;
+            if (supportsAction(node, action)) {
+                supported = true;
+                Rect bounds = new Rect();
+                node.getBoundsInScreen(bounds);
+                long width = Math.max(0, bounds.width());
+                long height = Math.max(0, bounds.height());
+                long score = width * height + (height >= width ? width * height : 0);
+                if (node.isVisibleToUser() && score > bestScore) {
+                    if (best != null) try { best.recycle(); } catch (Exception ignored) {}
+                    best = AccessibilityNodeInfo.obtain(node);
+                    bestScore = score;
+                }
+            }
+            for (int i = 0; i < node.getChildCount(); i++) {
+                AccessibilityNodeInfo child = node.getChild(i);
+                if (child != null) queue.add(child);
+            }
+            try { node.recycle(); } catch (Exception ignored) {}
+        }
+        if (best == null) return new ActionAttempt(supported, false);
+        try {
+            return new ActionAttempt(true, best.performAction(action));
+        } finally {
+            try { best.recycle(); } catch (Exception ignored) {}
+        }
+    }
+
+    private static boolean supportsAction(AccessibilityNodeInfo node, int actionId) {
+        if (node == null) return false;
+        for (AccessibilityNodeInfo.AccessibilityAction action : node.getActionList()) {
+            if (action != null && action.getId() == actionId) return true;
+        }
+        return false;
+    }
+
+    private static List<String> compactActions(AccessibilityNodeInfo node) {
+        List<String> out = new ArrayList<>();
+        addAction(out, node, AccessibilityNodeInfo.ACTION_CLICK, "click");
+        addAction(out, node, AccessibilityNodeInfo.ACTION_SET_TEXT, "set_text");
+        addAction(out, node, AccessibilityNodeInfo.ACTION_SCROLL_FORWARD, "scroll_forward");
+        addAction(out, node, AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD, "scroll_backward");
+        addAction(out, node, AccessibilityNodeInfo.ACTION_FOCUS, "focus");
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            addAction(out, node,
+                AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.getId(), "ime_enter");
+        }
+        return out;
+    }
+
+    private static void addAction(List<String> out, AccessibilityNodeInfo node,
+                                  int actionId, String name) {
+        if (supportsAction(node, actionId)) out.add(name);
+    }
 
     private AccessibilityNodeInfo resolve(String ref) {
         if (System.currentTimeMillis() > snapshotExpiresAt) return null; // stale snapshot

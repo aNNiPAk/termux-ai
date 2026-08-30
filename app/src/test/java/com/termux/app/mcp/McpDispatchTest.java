@@ -10,12 +10,14 @@ import org.json.JSONObject;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
+import org.robolectric.annotation.ConscryptMode;
 import org.robolectric.annotation.Config;
 
 import java.util.List;
 
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 28)
+@ConscryptMode(ConscryptMode.Mode.OFF)
 public class McpDispatchTest {
 
     private McpDispatch dispatcher(final String[] lastCall) {
@@ -55,7 +57,13 @@ public class McpDispatchTest {
         McpDispatch d = dispatcher(new String[1]);
         d.handle("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"auth\":\"secret\"}}");
         JSONObject r = parse(d.handle("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}"));
-        assertEquals(6, r.getJSONObject("result").getJSONArray("tools").length());
+        assertEquals(9, r.getJSONObject("result").getJSONArray("tools").length());
+        String tools = r.getJSONObject("result").getJSONArray("tools").toString();
+        assertTrue(tools.contains("\"name\":\"back\""));
+        assertTrue(tools.contains("\"name\":\"scroll\""));
+        assertTrue(tools.contains("\"name\":\"ime_action\""));
+        assertTrue(tools.contains("\"forward\""));
+        assertTrue(tools.contains("\"backward\""));
     }
 
     @Test
@@ -70,12 +78,15 @@ public class McpDispatchTest {
 
     @Test
     public void snapshotSerializesNodes() {
-        UiSnapshot.UiNode n = new UiSnapshot.UiNode("n1", "Button", "OK", "ok_btn", null, "[0,0][10,10]", true, false, false);
+        UiSnapshot.UiNode n = new UiSnapshot.UiNode("n1", "Button", "OK", "ok_btn", null,
+            "[0,0][10,10]", true, false, false, true, List.of("click"));
         UiSnapshot s = new UiSnapshot("snap-1", 5000L, List.of(n));
         String j = s.toJson();
         assertTrue(j.contains("\"snapshot_id\":\"snap-1\""));
         assertTrue(j.contains("\"node_ref\":\"n1\""));
         assertTrue(j.contains("\"clickable\":true"));
+        assertTrue(j.contains("\"focused\":true"));
+        assertTrue(j.contains("\"actions\":[\"click\"]"));
     }
 
     private static JSONObject parse(String s) throws Exception {

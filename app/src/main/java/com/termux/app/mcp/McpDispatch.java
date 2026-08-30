@@ -103,6 +103,15 @@ public final class McpDispatch {
             tools.put(tool("type",
                 "Set text on the editable element identified by node_ref.",
                 schemaTypeArgs()));
+            tools.put(tool("scroll",
+                "Scroll a referenced container or the best active scrollable container.",
+                schemaScrollArgs()));
+            tools.put(tool("back",
+                "Perform the Android global Back action.",
+                new JSONObject().put("type", "object").put("properties", new JSONObject())));
+            tools.put(tool("ime_action",
+                "Perform the supported IME enter action on a referenced or focused text field.",
+                schemaOptionalString("ref")));
             tools.put(tool("wake",
                 "Turn the screen on and dismiss a non-secure keyguard (best-effort).",
                 new JSONObject().put("type", "object").put("properties", new JSONObject())));
@@ -148,6 +157,20 @@ public final class McpDispatch {
             .put("text", new JSONObject().put("type", "string"));
         return new JSONObject().put("type", "object").put("properties", props)
             .put("required", new JSONArray().put("node_ref").put("text"));
+    }
+
+    private static JSONObject schemaOptionalString(String prop) throws Exception {
+        JSONObject props = new JSONObject().put(prop, new JSONObject().put("type", "string"));
+        return new JSONObject().put("type", "object").put("properties", props);
+    }
+
+    private static JSONObject schemaScrollArgs() throws Exception {
+        JSONObject props = new JSONObject()
+            .put("ref", new JSONObject().put("type", "string"))
+            .put("direction", new JSONObject().put("type", "string")
+                .put("enum", new JSONArray().put("forward").put("backward")));
+        return new JSONObject().put("type", "object").put("properties", props)
+            .put("required", new JSONArray().put("direction"));
     }
 
     private static String ok(Object id, JSONObject result) {

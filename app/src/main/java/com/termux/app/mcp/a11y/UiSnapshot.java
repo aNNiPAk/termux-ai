@@ -28,9 +28,12 @@ public final class UiSnapshot {
         public final boolean clickable;
         public final boolean editable;
         public final boolean scrollable;
+        public final boolean focused;
+        public final List<String> actions;
 
         public UiNode(String ref, String role, String text, String id, String desc,
-                      String bounds, boolean clickable, boolean editable, boolean scrollable) {
+                      String bounds, boolean clickable, boolean editable, boolean scrollable,
+                      boolean focused, List<String> actions) {
             this.ref = ref;
             this.role = role;
             this.text = text;
@@ -40,6 +43,8 @@ public final class UiSnapshot {
             this.clickable = clickable;
             this.editable = editable;
             this.scrollable = scrollable;
+            this.focused = focused;
+            this.actions = actions == null ? new ArrayList<String>() : actions;
         }
 
         JSONObject toJson() {
@@ -54,6 +59,12 @@ public final class UiSnapshot {
                 o.put("clickable", clickable);
                 o.put("editable", editable);
                 o.put("scrollable", scrollable);
+                o.put("focused", focused);
+                if (!actions.isEmpty()) {
+                    JSONArray supported = new JSONArray();
+                    for (String action : actions) supported.put(action);
+                    o.put("actions", supported);
+                }
             } catch (Exception ignored) {
             }
             return o;
