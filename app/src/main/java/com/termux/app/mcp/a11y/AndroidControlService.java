@@ -191,7 +191,7 @@ public final class AndroidControlService extends AccessibilityService {
 
     public synchronized String imeActionJson(String ref) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
-            return errJson("IME_ACTION_NOT_SUPPORTED");
+            return errJson("ime_action_not_supported");
         }
 
         AccessibilityNodeInfo node = null;
@@ -214,14 +214,36 @@ public final class AndroidControlService extends AccessibilityService {
         try {
             int actionId = AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.getId();
             if (!node.isEditable() && !node.isFocusable() && !supportsAction(node, actionId)) {
-                return errJson("IME_ACTION_NOT_SUPPORTED");
+                return errJson("ime_action_not_supported");
             }
-            if (!node.isFocused() && !node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)) {
-                return errJson("INPUT_FOCUS_FAILED");
+            if (!node.isFocused()) node.performAction(AccessibilityNodeInfo.ACTION_FOCUS);
+            if (supportsAction(node, actionId)) {
+                return node.performAction(actionId)
+                    ? okJson() : errJson("IME_ACTION_FAILED");
             }
-            if (!supportsAction(node, actionId)) return errJson("IME_ACTION_NOT_SUPPORTED");
-            return node.performAction(actionId)
-                ? okJson() : errJson("IME_ACTION_FAILED");
+
+            // A ref may point to a cached pre-focus node. Refresh the current
+            // input focus before deciding whether ACTION_IME_ENTER is absent.
+            AccessibilityNodeInfo root = getRootInActiveWindow();
+            if (root == null) return errJson("NO_ACTIVE_WINDOW");
+            AccessibilityNodeInfo focused = null;
+            try {
+                focused = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
+                if (focused == null) return errJson("INPUT_FOCUS_NOT_FOUND");
+                if (ref != null && !ref.isEmpty() && !node.equals(focused)) {
+                    return errJson("INPUT_FOCUS_FAILED");
+                }
+                if (!supportsAction(focused, actionId)) {
+                    return errJson("ime_action_not_supported");
+                }
+                return focused.performAction(actionId)
+                    ? okJson() : errJson("IME_ACTION_FAILED");
+            } finally {
+                if (focused != null) {
+                    try { focused.recycle(); } catch (Exception ignored) {}
+                }
+                try { root.recycle(); } catch (Exception ignored) {}
+            }
         } finally {
             if (recycle) {
                 try { node.recycle(); } catch (Exception ignored) {}
