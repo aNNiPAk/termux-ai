@@ -133,6 +133,11 @@ public final class McpSocketServer {
                 out = (svc == null) ? errJson("SERVICE_OFF") : svc.snapshotJson();
                 break;
             }
+            case "query_ui": {
+                AndroidControlService svc = AndroidControlService.INSTANCE;
+                out = (svc == null) ? errJson("SERVICE_OFF") : svc.queryUiJson(args);
+                break;
+            }
             case "tap": {
                 AndroidControlService svc = AndroidControlService.INSTANCE;
                 if (svc == null) out = errJson("SERVICE_OFF");

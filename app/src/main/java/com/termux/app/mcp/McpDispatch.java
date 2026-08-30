@@ -97,6 +97,9 @@ public final class McpDispatch {
             tools.put(tool("ui_snapshot",
                 "Return the interactable accessibility tree as nodes with stable refs (TTL-bound).",
                 new JSONObject().put("type", "object").put("properties", new JSONObject())));
+            tools.put(tool("query_ui",
+                "Return only accessibility nodes matching the supplied filters.",
+                schemaQueryUiArgs()));
             tools.put(tool("tap",
                 "Tap the element identified by node_ref from the latest ui_snapshot.",
                 schemaOneString("node_ref")));
@@ -171,6 +174,25 @@ public final class McpDispatch {
                 .put("enum", new JSONArray().put("forward").put("backward")));
         return new JSONObject().put("type", "object").put("properties", props)
             .put("required", new JSONArray().put("direction"));
+    }
+
+    private static JSONObject schemaQueryUiArgs() throws Exception {
+        JSONObject props = new JSONObject()
+            .put("text", new JSONObject().put("type", "string"))
+            .put("text_contains", new JSONObject().put("type", "string"))
+            .put("resource_id", new JSONObject().put("type", "string"))
+            .put("content_desc", new JSONObject().put("type", "string"))
+            .put("class_name", new JSONObject().put("type", "string"))
+            .put("clickable", new JSONObject().put("type", "boolean"))
+            .put("editable", new JSONObject().put("type", "boolean"))
+            .put("scrollable", new JSONObject().put("type", "boolean"))
+            .put("focused", new JSONObject().put("type", "boolean"))
+            .put("limit", new JSONObject().put("type", "integer")
+                .put("minimum", 1).put("maximum", 100).put("default", 20));
+        return new JSONObject()
+            .put("type", "object")
+            .put("properties", props)
+            .put("additionalProperties", false);
     }
 
     private static String ok(Object id, JSONObject result) {

@@ -9,12 +9,14 @@ import android.os.Bundle;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Queue;
 
@@ -109,6 +111,48 @@ public final class AndroidControlService extends AccessibilityService {
             }
         }
         return new UiSnapshot(snapshotId, SNAPSHOT_TTL_MS, nodes).toJson();
+    }
+
+    public synchronized String queryUiJson(JSONObject filters) {
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        if (root == null) return errJson("NO_ACTIVE_WINDOW");
+        clearRefs();
+        snapshotSeq++;
+        snapshotExpiresAt = System.currentTimeMillis() + SNAPSHOT_TTL_MS;
+
+        int limit = Math.max(1, Math.min(100, filters == null ? 20 : filters.optInt("limit", 20)));
+        JSONArray matches = new JSONArray();
+        Queue<AccessibilityNodeInfo> queue = new ArrayDeque<>();
+        queue.add(root);
+        int visited = 0;
+        while (!queue.isEmpty() && visited < MAX_NODES && matches.length() < limit) {
+            AccessibilityNodeInfo node = queue.poll();
+            if (node == null) continue;
+            visited++;
+            for (int i = 0; i < node.getChildCount(); i++) {
+                AccessibilityNodeInfo child = node.getChild(i);
+                if (child != null) queue.add(child);
+            }
+
+            if (matchesFilters(node, filters)) {
+                String ref = "n" + matches.length();
+                refMap.put(ref, node);
+                matches.put(queryNodeJson(ref, node));
+            } else {
+                try { node.recycle(); } catch (Exception ignored) {}
+            }
+        }
+        while (!queue.isEmpty()) {
+            AccessibilityNodeInfo node = queue.poll();
+            if (node != null) try { node.recycle(); } catch (Exception ignored) {}
+        }
+
+        JSONObject result = new JSONObject();
+        try {
+            result.put("ttl_ms", SNAPSHOT_TTL_MS);
+            result.put("nodes", matches);
+        } catch (Exception ignored) {}
+        return result.toString();
     }
 
     public synchronized String tapJson(String ref) {
@@ -371,6 +415,65 @@ public final class AndroidControlService extends AccessibilityService {
     private static void addAction(List<String> out, AccessibilityNodeInfo node,
                                   int actionId, String name) {
         if (supportsAction(node, actionId)) out.add(name);
+    }
+
+    private static boolean matchesFilters(AccessibilityNodeInfo node, JSONObject filters) {
+        if (filters == null) return true;
+        String text = str(node.getText());
+        if (filters.has("text") && !equalsIgnoreCase(text, filters.optString("text", ""))) {
+            return false;
+        }
+        if (filters.has("text_contains")) {
+            String needle = filters.optString("text_contains", "").toLowerCase(Locale.ROOT);
+            if (text == null || !text.toLowerCase(Locale.ROOT).contains(needle)) return false;
+        }
+        if (filters.has("resource_id")
+            && !filters.optString("resource_id", "").equals(node.getViewIdResourceName())) return false;
+        if (filters.has("content_desc")
+            && !filters.optString("content_desc", "").equals(str(node.getContentDescription()))) return false;
+        if (filters.has("class_name")
+            && !filters.optString("class_name", "").equals(str(node.getClassName()))) return false;
+        if (filters.has("clickable") && filters.optBoolean("clickable") != node.isClickable()) return false;
+        if (filters.has("editable") && filters.optBoolean("editable") != node.isEditable()) return false;
+        if (filters.has("scrollable") && filters.optBoolean("scrollable") != node.isScrollable()) return false;
+        return !filters.has("focused") || filters.optBoolean("focused") == node.isFocused();
+    }
+
+    private static boolean equalsIgnoreCase(String left, String right) {
+        return left != null && left.toLowerCase(Locale.ROOT).equals(
+            (right == null ? "" : right).toLowerCase(Locale.ROOT));
+    }
+
+    private static JSONObject queryNodeJson(String ref, AccessibilityNodeInfo node) {
+        JSONObject out = new JSONObject();
+        Rect bounds = new Rect();
+        node.getBoundsInScreen(bounds);
+        try {
+            out.put("ref", ref);
+            putIfPresent(out, "text", str(node.getText()));
+            putIfPresent(out, "contentDescription", str(node.getContentDescription()));
+            putIfPresent(out, "resourceId", node.getViewIdResourceName());
+            putIfPresent(out, "className", str(node.getClassName()));
+            out.put("bounds", "[" + bounds.left + "," + bounds.top + "]["
+                + bounds.right + "," + bounds.bottom + "]");
+            out.put("clickable", node.isClickable());
+            out.put("editable", node.isEditable());
+            out.put("scrollable", node.isScrollable());
+            out.put("focused", node.isFocused());
+            out.put("enabled", node.isEnabled());
+            List<String> actions = compactActions(node);
+            if (!actions.isEmpty()) {
+                JSONArray array = new JSONArray();
+                for (String action : actions) array.put(action);
+                out.put("actions", array);
+            }
+        } catch (Exception ignored) {}
+        return out;
+    }
+
+    private static void putIfPresent(JSONObject out, String key, String value) {
+        if (value == null || value.isEmpty()) return;
+        try { out.put(key, value); } catch (Exception ignored) {}
     }
 
     private AccessibilityNodeInfo resolve(String ref) {
