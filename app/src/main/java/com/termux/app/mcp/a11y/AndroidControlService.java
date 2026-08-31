@@ -138,6 +138,9 @@ public final class AndroidControlService extends AccessibilityService {
 
         int limit = Math.max(1, Math.min(100, filters == null ? 20 : filters.optInt("limit", 20)));
         JSONArray matches = new JSONArray();
+        String ancestorResourceId = filters == null ? ""
+            : filters.optString("ancestor_resource_id", "");
+        int[] nextRef = new int[] {0};
         Queue<AccessibilityNodeInfo> queue = new ArrayDeque<>();
         queue.add(root);
         int visited = 0;
@@ -151,9 +154,14 @@ public final class AndroidControlService extends AccessibilityService {
             }
 
             if (matchesFilters(node, filters)) {
-                String ref = "n" + matches.length();
+                String ref = "n" + nextRef[0]++;
                 refMap.put(ref, node);
-                matches.put(queryNodeJson(ref, node));
+                JSONObject match = queryNodeJson(ref, node);
+                String ancestorRef = findAndRegisterAncestor(node, ancestorResourceId, nextRef);
+                if (ancestorRef != null) {
+                    try { match.put("ancestor_ref", ancestorRef); } catch (Exception ignored) {}
+                }
+                matches.put(match);
             } else {
                 try { node.recycle(); } catch (Exception ignored) {}
             }
@@ -493,6 +501,9 @@ public final class AndroidControlService extends AccessibilityService {
 
     private static boolean matchesFilters(AccessibilityNodeInfo node, JSONObject filters) {
         if (filters == null) return true;
+        if (filters.optBoolean("visible_only", false) && !node.isVisibleToUser()) {
+            return false;
+        }
         String text = str(node.getText());
         if (filters.has("text") && !equalsIgnoreCase(text, filters.optString("text", ""))) {
             return false;
@@ -516,6 +527,29 @@ public final class AndroidControlService extends AccessibilityService {
     private static boolean equalsIgnoreCase(String left, String right) {
         return left != null && left.toLowerCase(Locale.ROOT).equals(
             (right == null ? "" : right).toLowerCase(Locale.ROOT));
+    }
+
+    private String findAndRegisterAncestor(AccessibilityNodeInfo node,
+                                           String resourceId, int[] nextRef) {
+        if (resourceId == null || resourceId.isEmpty()) return null;
+        AccessibilityNodeInfo ancestor = node.getParent();
+        while (ancestor != null) {
+            if (resourceId.equals(ancestor.getViewIdResourceName())) {
+                for (Map.Entry<String, AccessibilityNodeInfo> entry : refMap.entrySet()) {
+                    if (ancestor.equals(entry.getValue())) {
+                        try { ancestor.recycle(); } catch (Exception ignored) {}
+                        return entry.getKey();
+                    }
+                }
+                String ref = "n" + nextRef[0]++;
+                refMap.put(ref, ancestor);
+                return ref;
+            }
+            AccessibilityNodeInfo parent = ancestor.getParent();
+            try { ancestor.recycle(); } catch (Exception ignored) {}
+            ancestor = parent;
+        }
+        return null;
     }
 
     private static JSONObject queryNodeJson(String ref, AccessibilityNodeInfo node) {
