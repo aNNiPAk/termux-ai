@@ -137,6 +137,8 @@ public final class AndroidControlService extends AccessibilityService {
         snapshotExpiresAt = System.currentTimeMillis() + SNAPSHOT_TTL_MS;
 
         int limit = Math.max(1, Math.min(100, filters == null ? 20 : filters.optInt("limit", 20)));
+        Rect windowBounds = new Rect();
+        root.getBoundsInScreen(windowBounds);
         JSONArray matches = new JSONArray();
         String ancestorResourceId = filters == null ? ""
             : filters.optString("ancestor_resource_id", "");
@@ -154,7 +156,7 @@ public final class AndroidControlService extends AccessibilityService {
                 if (child != null) queue.add(child);
             }
 
-            if (matchesFilters(node, filters)) {
+            if (matchesFilters(node, filters, windowBounds)) {
                 String ref = "n" + nextRef[0]++;
                 fingerprint.add(node);
                 refMap.put(ref, node);
@@ -510,11 +512,11 @@ public final class AndroidControlService extends AccessibilityService {
         return "unknown";
     }
 
-    private static boolean matchesFilters(AccessibilityNodeInfo node, JSONObject filters) {
+    private static boolean matchesFilters(AccessibilityNodeInfo node, JSONObject filters,
+                                          Rect windowBounds) {
         if (filters == null) return true;
-        if (filters.optBoolean("visible_only", false) && !node.isVisibleToUser()) {
-            return false;
-        }
+        if (filters.optBoolean("visible_only", false)
+            && !isVisibleWithinWindow(node, windowBounds)) return false;
         String text = str(node.getText());
         if (filters.has("text") && !equalsIgnoreCase(text, filters.optString("text", ""))) {
             return false;
@@ -533,6 +535,17 @@ public final class AndroidControlService extends AccessibilityService {
         if (filters.has("editable") && filters.optBoolean("editable") != node.isEditable()) return false;
         if (filters.has("scrollable") && filters.optBoolean("scrollable") != node.isScrollable()) return false;
         return !filters.has("focused") || filters.optBoolean("focused") == node.isFocused();
+    }
+
+    private static boolean isVisibleWithinWindow(AccessibilityNodeInfo node, Rect windowBounds) {
+        Rect nodeBounds = new Rect();
+        node.getBoundsInScreen(nodeBounds);
+        if (nodeBounds.isEmpty() || windowBounds.isEmpty()
+            || !Rect.intersects(nodeBounds, windowBounds)) return false;
+        if (node.isVisibleToUser()) return true;
+        // Some virtualized lists report false for a descendant that is visibly
+        // inside the active window. Valid intersecting bounds are the fallback.
+        return true;
     }
 
     private static boolean equalsIgnoreCase(String left, String right) {
