@@ -190,6 +190,7 @@ public final class McpDispatch {
             .put("content_desc", new JSONObject().put("type", "string"))
             .put("class_name", new JSONObject().put("type", "string"))
             .put("ancestor_resource_id", new JSONObject().put("type", "string"))
+            .put("if_result_hash", new JSONObject().put("type", "string"))
             .put("visible_only", new JSONObject().put("type", "boolean"))
             .put("clickable", new JSONObject().put("type", "boolean"))
             .put("editable", new JSONObject().put("type", "boolean"))

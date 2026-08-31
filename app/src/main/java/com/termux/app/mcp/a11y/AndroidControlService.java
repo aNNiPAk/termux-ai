@@ -141,6 +141,7 @@ public final class AndroidControlService extends AccessibilityService {
         String ancestorResourceId = filters == null ? ""
             : filters.optString("ancestor_resource_id", "");
         int[] nextRef = new int[] {0};
+        QueryResultFingerprint fingerprint = new QueryResultFingerprint();
         Queue<AccessibilityNodeInfo> queue = new ArrayDeque<>();
         queue.add(root);
         int visited = 0;
@@ -155,6 +156,7 @@ public final class AndroidControlService extends AccessibilityService {
 
             if (matchesFilters(node, filters)) {
                 String ref = "n" + nextRef[0]++;
+                fingerprint.add(node);
                 refMap.put(ref, node);
                 JSONObject match = queryNodeJson(ref, node);
                 String ancestorRef = findAndRegisterAncestor(node, ancestorResourceId, nextRef);
@@ -171,10 +173,19 @@ public final class AndroidControlService extends AccessibilityService {
             if (node != null) try { node.recycle(); } catch (Exception ignored) {}
         }
 
+        String resultHash = fingerprint.finish();
+        String previousHash = filters == null ? "" : filters.optString("if_result_hash", "");
+        boolean conditional = filters != null && filters.has("if_result_hash");
         JSONObject result = new JSONObject();
         try {
-            result.put("ttl_ms", SNAPSHOT_TTL_MS);
             result.put("revision", uiRevision.get());
+            result.put("result_hash", resultHash);
+            if (conditional && previousHash.equals(resultHash)) {
+                result.put("changed", false);
+                return result.toString();
+            }
+            result.put("ttl_ms", SNAPSHOT_TTL_MS);
+            if (conditional) result.put("changed", true);
             result.put("nodes", matches);
         } catch (Exception ignored) {}
         return result.toString();

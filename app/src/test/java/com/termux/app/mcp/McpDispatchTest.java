@@ -73,6 +73,7 @@ public class McpDispatchTest {
         assertTrue(tools.contains("\"text_contains\""));
         assertTrue(tools.contains("\"ancestor_resource_id\""));
         assertTrue(tools.contains("\"visible_only\""));
+        assertTrue(tools.contains("\"if_result_hash\""));
         assertTrue(tools.contains("\"maximum\":100"));
         assertTrue(tools.contains("\"forward\""));
         assertTrue(tools.contains("\"backward\""));
