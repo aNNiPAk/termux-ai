@@ -15,10 +15,12 @@ import com.termux.shared.termux.TermuxConstants;
 
 import org.json.JSONObject;
 
-import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 
 /**
@@ -215,6 +217,30 @@ public final class McpSocketServer {
         catch (Exception e) { return "{\"ok\":false,\"error\":\"" + code + "\"}"; }
     }
 
+
+    static void serveJsonLines(InputStream input, OutputStream output,
+                               McpDispatch dispatch) throws Exception {
+        byte[] buffer = new byte[8192];
+        ByteArrayOutputStream frame = new ByteArrayOutputStream();
+        int count;
+        while ((count = input.read(buffer)) != -1) {
+            int start = 0;
+            for (int i = 0; i < count; i++) {
+                if (buffer[i] != '\n') continue;
+                frame.write(buffer, start, i - start);
+                String line = frame.toString(StandardCharsets.UTF_8.name());
+                frame.reset();
+                start = i + 1;
+                if (line.trim().isEmpty()) continue;
+                String response = dispatch.handle(line);
+                if (response != null && !response.isEmpty()) {
+                    output.write((response + "\n").getBytes(StandardCharsets.UTF_8));
+                    output.flush();
+                }
+            }
+            frame.write(buffer, start, count - start);
+        }
+    }
     private static final class Client extends LocalSocketManagerClientBase {
         @Override
         protected String getLogTag() {
@@ -228,17 +254,8 @@ public final class McpSocketServer {
             // com.termux uid can connect. Token file is reserved for the future
             // HTTP/SSE opt-in transport; on this private socket we trust the peer.
             McpDispatch dispatch = new McpDispatch(McpSocketServer::runTool, t -> true);
-            try (BufferedReader reader = new BufferedReader(clientSocket.getInputStreamReader())) {
-                OutputStream out = clientSocket.getOutputStream();
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    if (line.trim().isEmpty()) continue;
-                    String response = dispatch.handle(line);
-                    if (response != null && !response.isEmpty()) {
-                        out.write((response + "\n").getBytes("UTF-8"));
-                        out.flush();
-                    }
-                }
+            try (InputStream input = clientSocket.getInputStream()) {
+                serveJsonLines(input, clientSocket.getOutputStream(), dispatch);
             } catch (Exception e) {
                 Logger.logError(LOG_TAG, "client loop: " + e.getMessage());
             } finally {

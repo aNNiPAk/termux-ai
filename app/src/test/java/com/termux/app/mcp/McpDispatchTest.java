@@ -12,6 +12,10 @@ import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.annotation.ConscryptMode;
 import org.robolectric.annotation.Config;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+
 
 import java.util.List;
 
@@ -82,6 +86,42 @@ public class McpDispatchTest {
         assertFalse(r.getJSONObject("result").getBoolean("isError"));
     }
 
+
+    @Test
+    public void socketFramingProcessesChunkedUtf8JsonLines() throws Exception {
+        String[] captured = new String[1];
+        McpDispatch.ToolHandler handler = (name, args) -> {
+            captured[0] = args.optString("text");
+            return "{\"ok\":true}";
+        };
+        McpDispatch dispatch = new McpDispatch(handler, token -> "secret".equals(token));
+        String requests =
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"auth\":\"secret\"}}\n" +
+            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"type\",\"arguments\":{\"text\":\"зеркало\"}}}\n";
+        byte[] data = requests.getBytes(StandardCharsets.UTF_8);
+        InputStream input = new InputStream() {
+            int offset;
+            @Override
+            public int read() {
+                throw new AssertionError("single-byte read must not be used");
+            }
+            @Override
+            public int read(byte[] buffer, int start, int length) {
+                if (offset == data.length) return -1;
+                int count = Math.min(Math.min(length, 7), data.length - offset);
+                System.arraycopy(data, offset, buffer, start, count);
+                offset += count;
+                return count;
+            }
+        };
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        McpSocketServer.serveJsonLines(input, output, dispatch);
+        String[] responses = output.toString(StandardCharsets.UTF_8.name()).trim().split("\\n");
+        assertEquals(2, responses.length);
+        assertEquals("зеркало", captured[0]);
+        assertEquals("2024-11-05", parse(responses[0]).getJSONObject("result").getString("protocolVersion"));
+        assertTrue(parse(responses[1]).getJSONObject("result").has("content"));
+    }
     @Test
     public void snapshotSerializesNodes() {
         UiSnapshot.UiNode n = new UiSnapshot.UiNode("n1", "Button", "OK", "ok_btn", null,
