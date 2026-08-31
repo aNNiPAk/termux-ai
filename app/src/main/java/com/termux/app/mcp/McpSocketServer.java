@@ -220,7 +220,9 @@ public final class McpSocketServer {
 
     static void serveJsonLines(InputStream input, OutputStream output,
                                McpDispatch dispatch) throws Exception {
-        byte[] buffer = new byte[8192];
+        // The native socket read fills the requested array before returning. A one-byte
+        // request keeps newline-delimited MCP frames streaming without waiting for EOF.
+        byte[] buffer = new byte[1];
         ByteArrayOutputStream frame = new ByteArrayOutputStream();
         int count;
         while ((count = input.read(buffer)) != -1) {
